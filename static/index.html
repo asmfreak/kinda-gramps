@@ -52,6 +52,29 @@ main{
     <script src="static/lokijs.min.js"></script>
     <script src="static/svg-pan-zoom.js"></script>
     <script>
+function AjaxDBAdapter(){}
+AjaxDBAdapter.prototype.loadDatabase = function(dbname, callback) {
+  $.ajax("/"+dbname, {
+        dataType: "text",
+        success: callback,
+        error: function(){callback(new Error("There was a problem loading " + dbname + " database"));}
+  })
+}
+
+AjaxDBAdapter.prototype.saveDatabase = function(dbname, dbstring, callback) {
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "/db", true);
+    xhr.setRequestHeader('Content-type', 'application/json; charset=utf-8');
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState == 4)
+            if (xhr.status == 200) {
+                callback(null);
+            }else{
+                callback(new Error("An error was encountered saving " + dbname + " database."));
+            }
+    }
+    xhr.send(dbstring);
+}
 function create(ldb){
     var persons = ldb.getCollection('persons');
     var families = ldb.getCollection('families');
@@ -281,7 +304,7 @@ $(document).ready(function() {
             debug: true
         }
     });
-    var db = new loki("db");
+    var db = new loki("db-latest", {adapter: new AjaxDBAdapter()});
     var persons = db.addCollection('persons');
     var families = db.addCollection('families');
     persons.insert({ families:['Прокофьев'], names:['Иван'], snames:['Прокофьевич'], gender:'мужской', birth:'1861', death:'1949'});
@@ -292,6 +315,7 @@ $(document).ready(function() {
     families.insert({partners:[1, 2 ], children:[5]});
     families.insert({partners:[3, 2 ], children:[]});
     families.insert({partners:[4, 5 ], children:[]});
+    db.saveDatabase(function(){db.loadDatabase();});
     
     create(db);
     $("#ch_person").on('click', function(){

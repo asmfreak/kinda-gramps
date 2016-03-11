@@ -1,0 +1,6 @@
+*.json
+*.csv
+*.ipynb
+генеало*
+.rope*
+__py*
