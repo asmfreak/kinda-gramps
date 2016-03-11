@@ -41,7 +41,7 @@ main{
         <a class="item"><i class="sitemap icon"></i>Изменение связей</a>
     </nav>
     <div class="ui active dimmer">
-        <div class="ui loader"></div>
+        <div class="ui loader">Загружаемся...</div>
     </div>
     <main class="ui fluid container" id="output">
         
@@ -109,14 +109,37 @@ function create(ldb){
         '<svg id="output-svg" preserveAspectRatio="xMinYMin meet" class="ui image fluid" '
         );
     $("#output").append(s);
-    svgPanZoom("#output-svg");
+    window.svgpz = svgPanZoom("#output-svg");
     $("#output-svg")
         .attr("width","100%")
         .attr("height", "100%")
         .contextmenu(function(){return false;});
     $('#output').find(".node").click(function(ev){
-        console.log($(ev.currentTarget).attr("id"));
+        var idd = $(ev.currentTarget).attr("id");
+        if(idd[0]=="p"){
+            edit_person("body", persons, 
+                        persons.get(parseInt(idd.slice(1))),
+                        function(){recreate(ldb);}
+                       );
+            return true;
+        }
+        console.log(idd);
     })
+}
+function recreate(ldb){
+    if(window.svgpz){
+        window.svgpz.destroy();
+        delete window.svgpz;
+    }
+    $("#output").empty();
+    loader = $(
+        '<div class="ui active dimmer">'+
+        ' <div class="ui text loader">Loading</div>'+
+        '</div>'
+    );
+    $("#output").append(loader);
+    create(ldb);
+    loader.removeClass("active").remove();
 }
 function send_json(url, dat){
     var xhr = new XMLHttpRequest();
@@ -197,19 +220,29 @@ function multifield_input(sel, cls, hsingular, hplural, arr){
     for (i=1;i<arr.length;i++){
         add_with_animaion(sel+" .segment."+cls, hsingular, hplural, arr[i]);
     }
+    return function(){
+        return $.map(ndiv.find("input"), function(li) {
+            return $(li).prop("value");
+        });
+    }
 }
 function fio_inputs(sel, fams, nams, snams){
     fams = fams || [];
     nams = nams || [];
     snams = snams || [];
     $(sel).append('<div class="ui three column middle aligned grid fio"></div>')
-    multifield_input(sel+" .fio", "fam", "Фамилия", "Фамилии", fams);
-    multifield_input(sel+" .fio", "nam", "Имя", "Имена", nams);
-    multifield_input(sel+" .fio", "snam", "Отчество", "Отчества", snams);
+    res = [ multifield_input(sel+" .fio", "fam", "Фамилия", "Фамилии", fams),
+            multifield_input(sel+" .fio", "nam", "Имя", "Имена", nams),
+            multifield_input(sel+" .fio", "snam", "Отчество", "Отчества", snams)
+           ];
+    return function(){
+        return res.map(function(e){return e()})
+    }
 }
-function edit_person(sel, pers){
+function edit_person(sel, collection, person, app_cb){
+    app_cb = app_cb || function(){}
     pers_def = {
-            id: -1,
+            $loki: false,
             families: [],
             names: [],
             snames: [],
@@ -217,8 +250,8 @@ function edit_person(sel, pers){
             birth: "??",
             death: "??"
         }
-    pers = $.extend(true, pers_def, pers)
-    idd = pers.id;
+    var pers = $.extend(true, pers_def, person);
+    idd = pers.$loki;
     var ndiv = $(
       '<div id="pers'+idd+'" class="ui modal">'+
       ' <div class="icon header"><i class="edit icon"></i>Изменить человека</div>'+
@@ -232,7 +265,7 @@ function edit_person(sel, pers){
       '</div>'
     )
     $(sel).append(ndiv);
-    fio_inputs("#pers"+idd+" .content", pers.families, pers.names, pers.snames);
+    var fios = fio_inputs("#pers"+idd+" .content", pers.families, pers.names, pers.snames);
     ndiv.find(".content").append('<p>&nbsp;</p>')
     var gender = $(
         '<div class="segment">'+
@@ -249,7 +282,11 @@ function edit_person(sel, pers){
         '</div>'
     );
     ndiv.find(".content").append(gender);
-    gender.find('.dropdown').dropdown().dropdown("set selected", pers.gender);
+    gender.find('.dropdown').dropdown({
+        onChange:function(val){
+            pers.gender = val;
+        }
+    }).dropdown("set selected", pers.gender);
     var bd = $('<p>&nbsp;</p>'+
         '<div class="ui top attached tabular menu">'+
         '  <a class="item active" data-tab="birth">Рождение</a>'+
@@ -279,11 +316,27 @@ function edit_person(sel, pers){
     birth.attr("value", pers.birth);
     death.attr("value", pers.death);
     ndiv.modal({closable: false,
-                    detachable: false,
-                    onHidden: function(){
-                        ndiv.remove()
+                detachable: false,
+                onHidden: function(){
+                    ndiv.remove()
+                },
+                onApprove: function(){
+                    fio = fios();
+                    pers.families = fio[0];
+                    pers.names = fio[1];
+                    pers.snames = fio[2];
+                    pers.birth = birth.prop("value");
+                    pers.death = death.prop("value");
+                    if(pers.$loki){
+                        collection.update(pers);
+                    }else{
+                        collection.insert(pers);
                     }
+                    app_cb();
+                    return true;
+                }
             })
+    ndiv.modal('show');
     return ndiv
 }
 $(document).ready(function() {
@@ -319,14 +372,13 @@ $(document).ready(function() {
     
     create(db);
     $("#ch_person").on('click', function(){
-        var newdiv = edit_person("main", 
+        /*var newdiv = edit_person("main", 
              {families:["Иванов", "Петров"], 
               names:["Иван"],
               snames:["Иванович"],
               id:1,
               gender: "Женский"
-             })
-            .modal('show');
+             });*/
     });
     $(".ui.active.dimmer").removeClass("active").remove()
 });
