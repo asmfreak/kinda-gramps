@@ -15,7 +15,7 @@ body {
     height: 100%;
 }
 main{
-    height: calc(100% - 4em);
+    height: calc(100% - 5em);
     width: 100%
 }
 .toprightattached
@@ -24,24 +24,32 @@ main{
     top     : -15px;
     right   : -15px
 }
+.redstroke { 
+    stroke: red;
+}
     </style>
 </head>
 <body>
     <nav class="ui menu inverted">
         <div class="header item">Родословная</div>
+        <a id="save" class="item"><i class="big save icon"></i></a>
         <div class="ui search selectable dropdown icon item version-selector">
-            <i class="dropdown icon"></i>
+            <!--<i class="dropdown icon"></i>-->
             <input type="hidden">
             <input type="text" class="search">
             <div class="default text">Выберите версию</div>
         </div>
-        <a class="active item"><i class="eye icon"></i>Просмотр</a>
-        <a id="ch_person" class="item"><i class="user icon"></i>Изменение персоналий</a>
-        <a class="item"><i class="users icon"></i>Изменение семей</a>
-        <a class="item"><i class="sitemap icon"></i>Изменение связей</a>
+        <div class="choice menu">
+            <a class="active item"><i class="eye icon"></i>Просмотр</a>
+            <a id="ch_person" class="item"><i class="edit icon"></i>Изменение</a>
+        </div>
+        <div class="right menu">
+            <a id="new_person" class="right item"><i class="big green plus icon"></i><i class="user icon"></i></a>
+            <a id="new_family" class="right item"><i class="big green plus icon"></i><i class="sitemap icon"></i></a>
+        </div>
     </nav>
     <div class="ui active dimmer">
-        <div class="ui loader">Загружаемся...</div>
+        <div class="ui text loader">Загружаемся...</div>
     </div>
     <main class="ui fluid container" id="output">
         
@@ -51,337 +59,219 @@ main{
     <script src="static/viz.js"></script>
     <script src="static/lokijs.min.js"></script>
     <script src="static/svg-pan-zoom.js"></script>
+    <script src="static/moment.min.js"></script>
+    <script src="static/edit_person.js"></script>
+    <script src="static/message.js"></script>
+    <script src="static/ajaxdb.js"></script>
     <script>
-function AjaxDBAdapter(){}
-AjaxDBAdapter.prototype.loadDatabase = function(dbname, callback) {
-  $.ajax("/"+dbname, {
-        dataType: "text",
-        success: callback,
-        error: function(){callback(new Error("There was a problem loading " + dbname + " database"));}
-  })
-}
-
-AjaxDBAdapter.prototype.saveDatabase = function(dbname, dbstring, callback) {
-    var xhr = new XMLHttpRequest();
-    xhr.open("POST", "/db", true);
-    xhr.setRequestHeader('Content-type', 'application/json; charset=utf-8');
-    xhr.onreadystatechange = function() {
-        if (xhr.readyState == 4)
-            if (xhr.status == 200) {
-                callback(null);
-            }else{
-                callback(new Error("An error was encountered saving " + dbname + " database."));
+moment.locale("ru")
+function Page () {
+    var that = this;
+    var dbname = "db-latest";
+    var db = {};
+    var persons = {};
+    var families = {};
+    var dirty = false;
+    that.make_dirty = function(){
+        $("#save i").removeClass().addClass("big red save icon");
+        dirty = true;
+    }
+    that.make_loading_clean = function(){
+        $("#save i").removeClass().addClass("big loading spinner icon");
+    }
+    that.make_clean = function(){
+        $("#save i").removeClass().addClass("big green check circle icon");
+        dirty = false;
+    }
+    that.make_graph = function(){
+        return  'digraph G{\n'+
+                ' graph[splines=polyline]\n'+
+                ' node[shape="record"]\n'+
+                  persons.mapReduce(
+                    function (pers){
+                        return '"p' + pers.$loki +'"[label=" '+
+                            pers.families.map(function(v,i){if(i!=0 ){return "("+v+")";};return v;}).join("")+"\\n"+
+                            pers.names.map(function(v,i){if(i!=0 ){return "("+v+")";};return v;}).join("")+"\\n"+
+                            pers.snames.map(function(v,i){if(i!=0 ){return "("+v+")";};return v;}).join("")+"\\n"+
+                            '('+pers.birth+'-'+pers.death+' гг)", id="p' + pers.$loki +'",style=filled, fillcolor=white];\n';
+                    },
+                    function (arr){return arr.join("");}
+                  )+
+                  families.mapReduce(
+                    function (f){
+                        return  '{ '+f.partners.map(function(p){return '"p' + p +'"';}).join()+'}->"f'+f.$loki+'"\n'+
+                                '"f'+f.$loki+'"[shape="point", id="f'+f.$loki+'"]\n'+
+                                '"f'+f.$loki+'"->{'+f.children.map(function(p){return '"p' + p +'"';})+'}\n'
+                    },
+                    function (arr){return arr.join("");}
+                  )+
+                '}';
+    }
+    function accept_edited_person(pers){
+        if (pers.$loki){
+            persons.update(pers);
+        }else{
+            delete pers.$loki;
+            persons.insert(pers);
+        }
+        that.make_dirty();
+        that.create();
+    }
+    that.create = function (){
+        if(that.svgpz){
+            that.svgpz.destroy();
+            delete that.svgpz;
+        }
+        $("#output").empty();
+        loader = $(
+            '<div class="ui active dimmer">'+
+            ' <div class="ui text loader">Строим граф родословной...</div>'+
+            '</div>'
+        );
+        $("#output").append(loader);
+        graph = that.make_graph();
+        s = Viz(graph).replace(
+            "<svg",
+            '<svg id="output-svg" preserveAspectRatio="xMinYMin meet" class="ui image fluid" '
+            );
+        $("#output").append(s);
+        that.svgpz = svgPanZoom("#output-svg");
+        $("#output-svg")
+            .attr("width","100%")
+            .attr("height", "100%")
+            .contextmenu(function(){return false;});
+        $('#output').find(".node").click(function(ev){
+            var idd = $(ev.currentTarget).attr("id");
+            if(idd[0]=="p"){
+                edit_person(accept_edited_person,
+                            persons.get(parseInt(idd.slice(1)))
+                           );
+                return true;
             }
-    }
-    xhr.send(dbstring);
-}
-function create(ldb){
-    var persons = ldb.getCollection('persons');
-    var families = ldb.getCollection('families');
-    graph = 'digraph G{\n'+
-            ' graph[splines=polyline]\n'+
-            ' node[shape="record"]\n'+
-            persons.mapReduce(
-                function (pers){
-                    return '"p' + pers.$loki +'"[label=" '+
-                        pers.families.map(function(v,i){if(i!=0 ){return "("+v+")";};return v;}).join("")+"\\n"+
-                        pers.names.map(function(v,i){if(i!=0 ){return "("+v+")";};return v;}).join("")+"\\n"+
-                        pers.snames.map(function(v,i){if(i!=0 ){return "("+v+")";};return v;}).join("")+"\\n"+
-                        '('+pers.birth+'-'+pers.death+' гг)", id="p' + pers.$loki +'"];\n';
-                },
-                function (arr){
-                    return arr.join("");
-                }
-            )+
-            families.mapReduce(
-                function (f){
-                    return  '{ '+f.partners.map(function(p){return '"p' + p +'"';}).join()+'}->"f'+f.$loki+'"\n'+
-                            '"f'+f.$loki+'"[shape="point", id="f'+f.$loki+'"]\n'+
-                            '"f'+f.$loki+'"->{'+f.children.map(function(p){return '"p' + p +'"';})+'}\n'
-                },
-                function (arr){
-                    return arr.join("");
-                }
-            )+
-            '}';
-    s = Viz(graph).replace(
-        "<svg",
-        '<svg id="output-svg" preserveAspectRatio="xMinYMin meet" class="ui image fluid" '
-        );
-    $("#output").append(s);
-    window.svgpz = svgPanZoom("#output-svg");
-    $("#output-svg")
-        .attr("width","100%")
-        .attr("height", "100%")
-        .contextmenu(function(){return false;});
-    $('#output').find(".node").click(function(ev){
-        var idd = $(ev.currentTarget).attr("id");
-        if(idd[0]=="p"){
-            edit_person("body", persons, 
-                        persons.get(parseInt(idd.slice(1))),
-                        function(){recreate(ldb);}
-                       );
-            return true;
-        }
-        console.log(idd);
-    })
-}
-function recreate(ldb){
-    if(window.svgpz){
-        window.svgpz.destroy();
-        delete window.svgpz;
-    }
-    $("#output").empty();
-    loader = $(
-        '<div class="ui active dimmer">'+
-        ' <div class="ui text loader">Loading</div>'+
-        '</div>'
-    );
-    $("#output").append(loader);
-    create(ldb);
-    loader.removeClass("active").remove();
-}
-function send_json(url, dat){
-    var xhr = new XMLHttpRequest();
-    xhr.open("POST", url, true);
-    xhr.setRequestHeader('Content-type', 'application/json; charset=utf-8');
-    xhr.send(dat);
-}
-function get_json(url, cb, ecb){
-    $.ajax(url, {
-        dataType: "json",
-        success: cb,
-        error: ecb
-    })
-}
-function add_with_animaion(sel, sing, plur, value){
-    $(sel).append("<p>&nbsp;</p>"); 
-    var data = $(
-        '<div class="ui input">'+
-        ' <input placeholder="'+sing+'" type="text">'+
-        ' <button class="ui toprightattached circular mini negative icon button">'+
-        ' <i class="icon minus"></i>'+
-        '</button>').hide(); 
-    $(sel).append(data); data.slideDown(); 
-    $(sel+" div button.ui.negative")
-       .off("click")
-       .click(del_click_handler(sing,plur))    
-    l = $(sel).find("div").length
-    if (l==1){
-        $(sel).find("h3")
-      .text(sing)
-    }else{
-        $(sel).find("h3")
-          .text(plur)
-    }
-    if(value){
-        data.find("input").attr("value", value);
-    }
-}
-function del_click_handler(sing,plur){
-return  function(){
-    pp = $(this).parent().parent()
-    l = pp.find("div").length
-    if (l==2){
-        pp.find("h3")
-      .text(sing)
-    }else{
-        pp.find("h3")
-          .text(plur)
-    }
-    $(this).parent()
-        .slideUp(400, function(){
-            a = $(this)
-            a.prev().remove()
-            a[0].remove();
+            console.log(idd);
         })
-}
-}
-function multifield_input(sel, cls, hsingular, hplural, arr){
-    arr= arr || [];
-    var ndiv = $(
-        '<div class="segment '+cls+'">'+
-        ' <h3>'+((arr.length>1) ? hplural : hsingular)+'</h3>'+
-        ' <div class="ui input">'+
-        '  <input type="text" placeholder="'+hsingular+'" value="">'+
-        '  <button class="ui toprightattached circular mini positive icon button">'+
-        '   <i class="icon plus"></i>'+
-        '  </button>'+
-        ' </div>'+
-        '</div>'
-    );
-    ndiv.find("button").click(function(){
-            add_with_animaion(sel+" .segment."+cls, hsingular, hplural)
+        .hover(
+            function(){
+                $(this).find("polygon").addClass("redstroke");
+            },
+            function(){
+                $(this).find("polygon").removeClass("redstroke");
+            }
+        )
+        $('#output').find("title").remove();
+        loader.removeClass("active").remove();
+    }
+    that.make_db = function(){
+        delete persons;
+        delete families;
+        delete db;
+        db = new loki(dbname, {adapter: new AjaxDBAdapter()});
+        db.loadDatabase({}, function(){
+            persons = db.getCollection('persons');
+            families = db.getCollection('families');
+            that.make_clean();
+            that.create();
+            $(".ui.active.dimmer").removeClass("active").remove();
         });
-    if(arr.length>0){
-        ndiv.find("input").attr("value", arr[0]);
+        
     }
-    $(sel).append(ndiv)
-    for (i=1;i<arr.length;i++){
-        add_with_animaion(sel+" .segment."+cls, hsingular, hplural, arr[i]);
-    }
-    return function(){
-        return $.map(ndiv.find("input"), function(li) {
-            return $(li).prop("value");
-        });
-    }
-}
-function fio_inputs(sel, fams, nams, snams){
-    fams = fams || [];
-    nams = nams || [];
-    snams = snams || [];
-    $(sel).append('<div class="ui three column middle aligned grid fio"></div>')
-    res = [ multifield_input(sel+" .fio", "fam", "Фамилия", "Фамилии", fams),
-            multifield_input(sel+" .fio", "nam", "Имя", "Имена", nams),
-            multifield_input(sel+" .fio", "snam", "Отчество", "Отчества", snams)
-           ];
-    return function(){
-        return res.map(function(e){return e()})
-    }
-}
-function edit_person(sel, collection, person, app_cb){
-    app_cb = app_cb || function(){}
-    pers_def = {
-            $loki: false,
-            families: [],
-            names: [],
-            snames: [],
-            gender: "Женский",
-            birth: "??",
-            death: "??"
+    that.save_db = function(cb){
+        cb = cb || function(){};
+        if (dirty){
+            db.saveDatabase(function(){
+                that.make_clean();
+                cb();
+            });
         }
-    var pers = $.extend(true, pers_def, person);
-    idd = pers.$loki;
-    var ndiv = $(
-      '<div id="pers'+idd+'" class="ui modal">'+
-      ' <div class="icon header"><i class="edit icon"></i>Изменить человека</div>'+
-      ' <div class="content"></div>'+
-      ' <div class="actions">'+
-      '  <div class="two fluid ui inverted buttons">'+
-      '   <div class="ui red deny button"><i class="remove icon"></i>Отменить</div>'+
-      '   <div class="ui green positive right button"><i class="checkmark icon"></i>Сохранить</div>'+
-      '  </div>'+
-      ' </div>'+
-      '</div>'
-    )
-    $(sel).append(ndiv);
-    var fios = fio_inputs("#pers"+idd+" .content", pers.families, pers.names, pers.snames);
-    ndiv.find(".content").append('<p>&nbsp;</p>')
-    var gender = $(
-        '<div class="segment">'+
-        ' <h3>Пол</h3>'+
-        ' <div class="ui label fluid selection dropdown">'+
-        '  <input name="gender" type="hidden">'+
-        '  <i class="dropdown icon"></i>'+
-        '  <div class="default text">Пол</div>'+
-        '  <div class="menu">'+
-        '   <div class="item" data-value="мужской"><i class="male icon"></i>Мужской</div>'+
-        '   <div class="item" data-value="женский"><i class="female icon"></i>Женский</div>'+
-        '  </div>'+
-        ' </div>'+
-        '</div>'
-    );
-    ndiv.find(".content").append(gender);
-    gender.find('.dropdown').dropdown({
-        onChange:function(val){
-            pers.gender = val;
-        }
-    }).dropdown("set selected", pers.gender);
-    var bd = $('<p>&nbsp;</p>'+
-        '<div class="ui top attached tabular menu">'+
-        '  <a class="item active" data-tab="birth">Рождение</a>'+
-        '  <a class="item" data-tab="death">Смерть</a>'+
-        '</div>'+
-        '<div class="ui bottom attached tab segment active" data-tab="birth">'+
-        ' <div class="segment">'+
-        '  <h3>Дата</h3>'+
-        '  <div class="ui input">'+
-        '   <input type="text" placeholder="Дата рождения" class="birth" value="">'+
-        '  </div>'+
-        ' </div>'+
-        '</div>'+
-        '<div class="ui bottom attached tab segment" data-tab="death">'+
-        ' <div class="segment">'+
-        '  <h3>Дата</h3>'+
-        '  <div class="ui input">'+
-        '   <input type="text" placeholder="Дата смерти" class="death" value="">'+
-        '  </div>'+
-        ' </div>'+
-        '</div>'
-        );
-    ndiv.find(".content").append(bd)
-    bd.find('.item').tab()
-    var birth = bd.find('.birth'),
-        death = bd.find('.death');
-    birth.attr("value", pers.birth);
-    death.attr("value", pers.death);
-    ndiv.modal({closable: false,
-                detachable: false,
-                onHidden: function(){
-                    ndiv.remove()
-                },
-                onApprove: function(){
-                    fio = fios();
-                    pers.families = fio[0];
-                    pers.names = fio[1];
-                    pers.snames = fio[2];
-                    pers.birth = birth.prop("value");
-                    pers.death = death.prop("value");
-                    if(pers.$loki){
-                        collection.update(pers);
-                    }else{
-                        collection.insert(pers);
-                    }
-                    app_cb();
-                    return true;
-                }
-            })
-    ndiv.modal('show');
-    return ndiv
-}
-$(document).ready(function() {
-    //('main').height($('body').height() - $('.ui.menu').height())
-    $('.ui.menu a.item').on('click', function() {
+    }
+    $('.choice.menu a.item').on('click', function() {
         $(this)
             .addClass('active')
             .siblings()
             .removeClass('active');
           });
+    $("#save").click(function(){
+        that.save_db();
+    })
     $('.version-selector').dropdown({
-        debug:true,
         saveRemoteData: false,
         apiSettings: {
             url: '/dbs',
             on: true,
             cache: false,
-            debug: true
+            onResponse: function(response) {
+                for(i in response.results){
+                    m = moment.utc(response.results[i].name, "Версия от DD.MM.YY_HH:mm:ss")
+                    if(m.isValid()){
+                        response.results[i].name = "Сохранение "+m.fromNow();
+                    }
+                }
+                return response;
+            }
         }
-    });
-    var db = new loki("db-latest", {adapter: new AjaxDBAdapter()});
-    var persons = db.addCollection('persons');
-    var families = db.addCollection('families');
-    persons.insert({ families:['Прокофьев'], names:['Иван'], snames:['Прокофьевич'], gender:'мужской', birth:'1861', death:'1949'});
-    persons.insert({ families:['Прокофьева'], names:['Акелина'], snames:['Ивановна'], gender:'женский', birth:'??', death:'??'});
-    persons.insert({ families:['Прокофьева'], names:['Екатерина'], snames:['Ивановна'], gender:'женский', birth:'??', death:'??'});
-    persons.insert({ families:['Смирнов'], names:['Степан'], snames:['??'], gender:'мужской', birth:'??', death:'??'});
-    persons.insert({ families:['Смирнова', 'Иванова'], names:['Мария'], snames:['Ивановна'], gender:'женский', birth:'04.04.1892', death:'30.09.1970'});
-    families.insert({partners:[1, 2 ], children:[5]});
-    families.insert({partners:[3, 2 ], children:[]});
-    families.insert({partners:[4, 5 ], children:[]});
-    db.saveDatabase(function(){db.loadDatabase();});
-    
-    create(db);
+    }).dropdown("set text", "Последняя версия").dropdown("set value","db-latest")
+    .dropdown("setting","onChange", 
+        function(value, text, $selectedItem) {
+            if(dirty){
+                message(
+                    '<i class="warning sign icon"></i>Несохранённые изменения',
+                    '<div class="content">Вы внесли изменения, но сохранили их. Сохранить изменения?</div>',
+                    function(){
+                        that.save_db(function(){
+                            dbname = value;
+                            that.make_db();
+                        });
+                    },
+                    function(){
+                        dbname = value;
+                        that.make_db();
+                    }
+                );
+            }else{
+                dbname = value;
+                that.make_db();
+            }
+        });
+    that.make_db();
+    //db.loadDatabase({},that.create);
     $("#ch_person").on('click', function(){
-        /*var newdiv = edit_person("main", 
-             {families:["Иванов", "Петров"], 
-              names:["Иван"],
-              snames:["Иванович"],
-              id:1,
-              gender: "Женский"
-             });*/
+        
     });
-    $(".ui.active.dimmer").removeClass("active").remove()
-});
+    $("#new_person").on('click', function(){
+        edit_person(accept_edited_person);
+    });
+    that.populate = function (cb){
+        persons.insert({ 
+            families:['Прокофьев'], 
+            names:   ['Иван'], snames:  ['Прокофьевич'], 
+            gender:  'мужской', birth:'1861', death:'1949'});
+        persons.insert({ 
+            families:['Прокофьева'], 
+            names:   ['Акелина'], snames:  ['Ивановна'], 
+            gender:'женский', birth:'??', death:'??'});
+        persons.insert({ 
+            families:['Прокофьева'], 
+            names:['Екатерина'], 
+            snames:['Ивановна'], gender:'женский', birth:'??', death:'??'});
+        persons.insert({ 
+            families:['Смирнов'], 
+            names:['Степан'], snames:['??'], 
+            gender:'мужской', birth:'??', death:'??'});
+        persons.insert({ 
+            families:['Смирнова', 'Иванова'], 
+            names:['Мария'], snames:['Ивановна'], 
+            gender:'женский', birth:'04.04.1892', death:'30.09.1970'});
+        families.insert({partners:[1, 2 ], children:[5]});
+        families.insert({partners:[3, 2 ], children:[]});
+        families.insert({partners:[4, 5 ], children:[]});
+        db.saveDatabase(function(){db.loadDatabase({},cb);});
+    }
+    /*that.populate(function(){
+        
+        that.create();
+    });*/
+}
+$(document).ready(Page);
     </script>
 </body>
 </html>

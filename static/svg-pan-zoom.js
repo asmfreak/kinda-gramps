@@ -586,7 +586,7 @@ SvgPanZoom.prototype.setupHandlers = function() {
   this.eventListeners = {
     // Mouse down group
     mousedown: function(evt) {
-      console.log(evt.button)
+      //console.log(evt.button)
       if (evt.button==2){
         return that.handleMouseDown(evt, null);
       }

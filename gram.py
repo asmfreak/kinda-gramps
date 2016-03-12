@@ -16,7 +16,9 @@ def hello_world():
 
 @app.route("/dbs")
 def list_dbs():
-    res = [ {"name": "Версия от {}".format(db[3:len(db)-5]), "value": db[:-5]} for db in glob.iglob('db-[0-9]*.json')]
+    res = glob.glob('db-[0-9]*.json')
+    res.sort(reverse=True)
+    res = [{"name": "Последняя версия", "value":"db-latest"}] + [ {"name": "Версия от {}".format(db[3:len(db)-5]), "value": db[:-5]} for db in res]
     return json.dumps({"success": True,"results":res}, ensure_ascii=False)
         
     
@@ -24,7 +26,7 @@ def list_dbs():
 def db():
     if request.method == "POST":
         db = request.get_json(force=True)
-        fn = "db-{:%d.%m.%y_%H:%M:%S}.json".format(datetime.now())
+        fn = "db-{:%d.%m.%y_%H:%M:%S}.json".format(datetime.utcnow())
         with open(fn, "w") as f:
             json.dump(db, f, ensure_ascii=False)
         subprocess.call(["ln", "-sf", fn, "db-latest.json"])
