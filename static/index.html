@@ -45,7 +45,7 @@ main{
             <div class="default text">Выберите версию</div>
         </div>
         <div class="choice menu">
-            <a id="ch_person" class="item"><i class="edit icon"></i>Изменение</a>
+            <a id="edit_mode" class="item"><i class="edit icon"></i>Изменение</a>
         </div>
     </nav>
     <div class="ui active dimmer">
@@ -53,6 +53,29 @@ main{
     </div>
     <main class="ui fluid container" id="output">
     </main>
+    <div class="ui modal">
+        <div class="icon header"><i class=""></i>Введите пароль</div>
+        <div class="content">
+            <div class="ui form">
+              <div class="field">
+                <label>Пароль</label>
+                <div class="ui left labeled icon input">
+                  <input type="password">
+                  <i class="lock icon"></i>
+                  <div class="ui corner label">
+                    <i class="icon asterisk"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+        </div>
+        <div class="actions">
+            <div class="two fluid ui inverted buttons">
+                <div class="ui red deny button"><i class="remove icon"></i>Нет</div>
+                <div class="ui green positive right button"><i class="checkmark icon"></i>Да</div>
+            </div>
+        </div>
+    </div>
     <script src="static/jquery-2.2.0.min.js"></script>
     <script src="static/semantic.js"></script>
     <script src="static/viz.js"></script>
@@ -137,14 +160,12 @@ function Page () {
         
     }
     $('.choice.menu a.item').on('click', function() {
-        $(this)
-            .addClass('active')
-            .siblings()
-            .removeClass('active');
-          });
-    $("#save").click(function(){
-        that.save_db();
-    })
+        $(".ui.modal").modal({
+            onApprove:function(){
+                $('<form action="/login" method="POST"><input name="password" value="'+$(".ui.modal").find("input")[0].value+'"></form>').appendTo('body').submit();
+            }
+        }).modal("show");
+    });
     $('.version-selector').dropdown({
         saveRemoteData: false,
         apiSettings: {
@@ -164,16 +185,6 @@ function Page () {
     }).dropdown("set text", "Последняя версия").dropdown("set value","db-latest")
     .dropdown("setting","onChange", function(value, text, $selectedItem) {dbname = value;that.make_db();});
     that.make_db();
-    //db.loadDatabase({},that.create);
-    $("#ch_person").on('click', function(){
-        
-    });
-    $("#new_person").on('click', function(){
-        edit_person(accept_edited_person);
-    });
-    $("#new_family").on("click",function(){
-        edit_family(accept_edited_family,that.request_names,function(){edit_person(accept_edited_person);});
-    });
     window.Page_object = that;
 }
 $(document).ready(Page);

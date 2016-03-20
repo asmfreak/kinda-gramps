@@ -1,18 +1,49 @@
-from flask import Flask
+from flask import Flask, session
 from flask import request
 from datetime import datetime
 import json
 import os
 import glob
 import subprocess
-from gram_conf import server, passw
+from gram_conf import server, passw, secret
+from functools import wraps
 
 app = Flask(__name__, static_url_path='/static')
+app.secret_key = secret
+
+@app.route('/login', methods=["POST"])
+def check_pass():
+    pw = request.form
+    print(pw)
+    try:
+        pw = pw["password"]
+    except:
+        return app.send_static_file( 'index.html')
+    if pw == passw:
+        session["logged"] = True
+        return app.send_static_file( 'index-edit.html')
+    session["logged"] = False
+    return app.send_static_file( 'index.html')
+
+def loginreq(fcn):
+    @wraps(fcn)
+    def wrap(*args, **kwargs):
+        try:
+            if session["logged"]:
+                return fcn(*args, **kwargs)
+        except KeyError:
+            pass
+        return app.send_static_file( 'index.html')
+    return wrap
 
 @app.route('/')
 def hello_world():
     return app.send_static_file( 'index.html')
-    #return "<h1>it's working</h1>"
+
+@app.route('/edit')
+@loginreq
+def edit():
+    return app.send_static_file( 'index-edit.html')
 
 @app.route("/dbs")
 def list_dbs():
@@ -22,18 +53,16 @@ def list_dbs():
     return json.dumps({"success": True,"results":res}, ensure_ascii=False)
         
     
-@app.route("/db", methods=["GET","POST"])
+@app.route("/db", methods=["POST"])
+@loginreq
 def db():
-    if request.method == "POST":
-        db = request.get_json(force=True)
-        fn = "db-{:%d.%m.%y_%H:%M:%S}.json".format(datetime.utcnow())
-        with open(fn, "w") as f:
-            json.dump(db, f, ensure_ascii=False)
-        subprocess.call(["ln", "-sf", fn, "db-latest.json"])
-        return "{'status':'Ok'}"
-    else:
-        with open('db-latest.json', "w") as f:
-            return f.read()
+    db = request.get_json(force=True)
+    fn = "db-{:%d.%m.%y_%H:%M:%S}.json".format(datetime.utcnow())
+    with open(fn, "w") as f:
+        json.dump(db, f, ensure_ascii=False)
+    subprocess.call(["ln", "-sf", fn, "db-latest.json"])
+    return "{'status':'Ok'}"
+
 @app.route("/db-<path:path>")
 def db_by_name(path):
     with open('db-{}.json'.format(path), "r") as f:
