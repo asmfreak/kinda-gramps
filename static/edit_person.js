@@ -163,6 +163,7 @@ function edit_person(app_cb, person, sel){
     death.attr("value", pers.death);
     ndiv.modal({closable: false,
                 detachable: false,
+                allowMultiple: true,
                 onHidden: function(){
                     ndiv.remove()
                 },

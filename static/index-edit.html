@@ -16,7 +16,7 @@ body {
 }
 main{
     height: calc(100% - 5em);
-    width: 100%;
+    width: 100%
 }
 .toprightattached
 {
@@ -38,6 +38,7 @@ main{
 <body>
     <nav class="ui menu inverted">
         <div class="header item">Родословная</div>
+        <a id="save" class="item"><i class="big save icon"></i></a>
         <div class="version-selector ui search selectable icon item dropdown">
             <input type="hidden">
             <!--<i class="dropdown icon"></i>-->
@@ -45,7 +46,12 @@ main{
             <div class="default text">Выберите версию</div>
         </div>
         <div class="choice menu">
+            <a class="active item"><i class="eye icon"></i>Просмотр</a>
             <a id="ch_person" class="item"><i class="edit icon"></i>Изменение</a>
+        </div>
+        <div class="right menu">
+            <a id="new_person" class="right item"><i class="big green plus icon"></i><i class="user icon"></i></a>
+            <a id="new_family" class="right item"><i class="big green plus icon"></i><i class="sitemap icon"></i></a>
         </div>
     </nav>
     <div class="ui active dimmer">
@@ -59,7 +65,10 @@ main{
     <script src="static/lokijs.min.js"></script>
     <script src="static/svg-pan-zoom.js"></script>
     <script src="static/moment.min.js"></script>
-    <script src="static/rajaxdb.js"></script>
+    <script src="static/edit_person.js"></script>
+    <script src="static/edit_family.js"></script>
+    <script src="static/message.js"></script>
+    <script src="static/ajaxdb.js"></script>
     <script>
 moment.locale("ru")
 function Page () {
@@ -69,6 +78,17 @@ function Page () {
     var persons = {};
     var families = {};
     var dirty = false;
+    that.make_dirty = function(){
+        $("#save i").removeClass().addClass("big red save icon");
+        dirty = true;
+    }
+    that.make_loading_clean = function(){
+        $("#save i").removeClass().addClass("big loading spinner icon");
+    }
+    that.make_clean = function(){
+        $("#save i").removeClass().addClass("big green check circle icon");
+        dirty = false;
+    }
     that.make_graph = function(){
         return  'digraph G{\n'+
                 ' graph[splines=polyline]\n'+
@@ -96,6 +116,40 @@ function Page () {
                   )+
                 '}';
     }
+    function accept_edited_person(pers){
+        if (pers.$loki){
+            persons.update(pers);
+        }else{
+            delete pers.$loki;
+            persons.insert(pers);
+        }
+        that.make_dirty();
+        that.create();
+    }
+    function accept_edited_family(family){
+        if (family.$loki){
+            families.update(family);
+        }else{
+            delete family.$loki;
+            families.insert(family);
+        }
+        that.make_dirty();
+        that.create();
+    }
+    that.request_names= function(settings, cb){
+        with_fio = persons.chain().find()
+            .map(function (o){
+                delete o.$loki; 
+                return $.extend(true, o , {
+                    fio: o.families.map(function(v,i){if(i!=0 ){return "("+v+")";};return v;}).join(" ")+
+                        " " + o.names.map(function(v,i){if(i!=0 ){return "("+v+")";};return v;}).join(" ")+ 
+                        " " + o.snames.map(function(v,i){if(i!=0 ){return "("+v+")";};return v;}).join(" ")});
+            });
+        res = with_fio;
+        if(settings.urlData.query)
+            res = with_fio.find({"fio":{"$regex":[settings.urlData.query,"i"]}})
+        cb({results:res.data().map(function(o){return {name:o.fio, value: o.$loki};})});
+    }
     that.create = function (){
         if(that.svgpz){
             that.svgpz.destroy();
@@ -119,6 +173,33 @@ function Page () {
             .attr("width","100%")
             .attr("height", "100%")
             .contextmenu(function(){return false;});
+        $('#output').find(".node").click(function(ev){
+            var idd = $(ev.currentTarget).attr("id");
+            if(idd[0]=="p"){
+                edit_person(accept_edited_person,
+                            persons.get(parseInt(idd.slice(1)))
+                           );
+                return true;
+            }else if(idd[0]=="f"){
+                edit_family(accept_edited_family,
+                            that.request_names,
+                            function(){
+                                edit_person(accept_edited_person);
+                            },
+                            families.get(parseInt(idd.slice(1)))
+                           );
+                return true;
+            }
+            console.log(idd);
+        })
+        .hover(
+            function(){
+                $(this).find("polygon").addClass("redstroke");
+            },
+            function(){
+                $(this).find("polygon").removeClass("redstroke");
+            }
+        )
         $('#output').find("title").remove();
         loader.removeClass("active").remove();
     }
@@ -131,10 +212,20 @@ function Page () {
         db.loadDatabase({}, function(){
             persons = db.getCollection('persons');
             families = db.getCollection('families');
+            that.make_clean();
             that.create();
             $(".ui.active.dimmer").removeClass("active").remove();
         });
         
+    }
+    that.save_db = function(cb){
+        cb = cb || function(){};
+        if (dirty){
+            db.saveDatabase(function(){
+                that.make_clean();
+                cb();
+            });
+        }
     }
     $('.choice.menu a.item').on('click', function() {
         $(this)
@@ -162,7 +253,28 @@ function Page () {
             }
         }
     }).dropdown("set text", "Последняя версия").dropdown("set value","db-latest")
-    .dropdown("setting","onChange", function(value, text, $selectedItem) {dbname = value;that.make_db();});
+    .dropdown("setting","onChange", 
+        function(value, text, $selectedItem) {
+            if(dirty){
+                message(
+                    '<i class="warning sign icon"></i>Несохранённые изменения',
+                    '<div class="content">Вы внесли изменения, но сохранили их. Сохранить изменения?</div>',
+                    function(){
+                        that.save_db(function(){
+                            dbname = value;
+                            that.make_db();
+                        });
+                    },
+                    function(){
+                        dbname = value;
+                        that.make_db();
+                    }
+                );
+            }else{
+                dbname = value;
+                that.make_db();
+            }
+        });
     that.make_db();
     //db.loadDatabase({},that.create);
     $("#ch_person").on('click', function(){
@@ -174,6 +286,36 @@ function Page () {
     $("#new_family").on("click",function(){
         edit_family(accept_edited_family,that.request_names,function(){edit_person(accept_edited_person);});
     });
+    that.populate = function (cb){
+        persons.insert({ 
+            families:['Прокофьев'], 
+            names:   ['Иван'], snames:  ['Прокофьевич'], 
+            gender:  'мужской', birth:'1861', death:'1949'});
+        persons.insert({ 
+            families:['Прокофьева'], 
+            names:   ['Акелина'], snames:  ['Ивановна'], 
+            gender:'женский', birth:'??', death:'??'});
+        persons.insert({ 
+            families:['Прокофьева'], 
+            names:['Екатерина'], 
+            snames:['Ивановна'], gender:'женский', birth:'??', death:'??'});
+        persons.insert({ 
+            families:['Смирнов'], 
+            names:['Степан'], snames:['??'], 
+            gender:'мужской', birth:'??', death:'??'});
+        persons.insert({ 
+            families:['Смирнова', 'Иванова'], 
+            names:['Мария'], snames:['Ивановна'], 
+            gender:'женский', birth:'04.04.1892', death:'30.09.1970'});
+        families.insert({partners:[1, 2 ], children:[5]});
+        families.insert({partners:[3, 2 ], children:[]});
+        families.insert({partners:[4, 5 ], children:[]});
+        db.saveDatabase(function(){db.loadDatabase({},cb);});
+    }
+    /*that.populate(function(){
+        
+        that.create();
+    });*/
     window.Page_object = that;
 }
 $(document).ready(Page);

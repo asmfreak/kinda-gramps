@@ -4335,13 +4335,13 @@ $.fn.dropdown = function(parameters) {
           }
         },
 
-        search: function(query) {
+        search: function(query, cb) {
           query = (query !== undefined)
             ? query
             : module.get.query()
           ;
           module.verbose('Searching for query', query);
-          module.filter(query);
+          module.filter(query, cb);
         },
 
         select: {
@@ -4713,7 +4713,8 @@ $.fn.dropdown = function(parameters) {
           }
         },
 
-        filter: function(query) {
+        filter: function(query, cb) {
+          cb = cb || function(){};
           var
             searchTerm = (query !== undefined)
               ? query
@@ -4744,6 +4745,7 @@ $.fn.dropdown = function(parameters) {
               if(module.is.searchSelection() && module.can.show() && module.is.focusedOnSearch() ) {
                 module.show();
               }
+              cb();
             }
           ;
           if(settings.useLabels && module.has.maxSelections()) {

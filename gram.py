@@ -5,7 +5,7 @@ import json
 import os
 import glob
 import subprocess
-from gram_conf import server
+from gram_conf import server, passw
 
 app = Flask(__name__, static_url_path='/static')
 
