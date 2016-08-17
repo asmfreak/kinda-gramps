@@ -3,6 +3,7 @@
     <title>Родословная</title>
     <meta charset="utf-8">    
     <link rel="stylesheet" type="text/css" href="/static/semantic.min.css">
+    
     <style>
 html{
     height: 100%;
@@ -47,6 +48,9 @@ main{
         <div class="choice menu">
             <a id="edit_mode" class="item"><i class="edit icon"></i>Изменение</a>
         </div>
+        <div class="choice menu">
+            <a id="downloadsvg" class="item"><i class="download icon"></i>Загрузить граф</a>
+        </div>
     </nav>
     <div class="ui active dimmer">
         <div class="ui text loader">Загружаемся...</div>
@@ -76,6 +80,7 @@ main{
             </div>
         </div>
     </div>
+    <script src="http://danml.com/js/download.js"></script>
     <script src="static/jquery-2.2.0.min.js"></script>
     <script src="static/semantic.js"></script>
     <script src="static/viz.js"></script>
@@ -111,7 +116,7 @@ function Page () {
                   )+
                   families.mapReduce(
                     function (f){
-                        return  '{ '+f.partners.map(function(p){return '"p' + p +'"';}).join()+'}->"f'+f.$loki+'"\n'+
+                        return  'subgraph cluster_f'+f.$loki+' { '+f.partners.map(function(p){return '"p' + p +'"';}).join()+'}->"f'+f.$loki+'"\n'+
                                 '"f'+f.$loki+'"[shape="point", id="f'+f.$loki+'"]\n'+
                                 '"f'+f.$loki+'"->{'+f.children.map(function(p){return '"p' + p +'"';})+'}\n'
                     },
@@ -119,6 +124,7 @@ function Page () {
                   )+
                 '}';
     }
+    that.current_graph = function(){return Viz(that.make_graph());}
     that.create = function (){
         if(that.svgpz){
             that.svgpz.destroy();
@@ -159,12 +165,15 @@ function Page () {
         });
         
     }
-    $('.choice.menu a.item').on('click', function() {
+    $('#edit_mode').on('click', function() {
         $(".ui.modal").modal({
             onApprove:function(){
                 $('<form action="/login" method="POST"><input name="password" value="'+$(".ui.modal").find("input")[0].value+'"></form>').appendTo('body').submit();
             }
         }).modal("show");
+    });
+    $("#downloadsvg").click(function(){
+        download(that.current_graph(),"родословная.svg","image/svg+xml")
     });
     $('.version-selector').dropdown({
         saveRemoteData: false,
