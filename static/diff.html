@@ -14,10 +14,6 @@ body {
     width: 100%;
     height: 100%;
 }
-main{
-    height: calc(100% - 5em);
-    width: 100%
-}
 .toprightattached
 {
     position: absolute;
@@ -50,35 +46,44 @@ polygon, ellipse{
 <body>
     <nav class="ui menu inverted">
         <div class="header item">Родословная</div>
-        <a id="save" class="item"><i class="big save icon"></i></a>
-        <div class="version-selector ui search selectable icon item dropdown">
-            <input type="hidden">
-            <!--<i class="dropdown icon"></i>-->
-            <input type="text" class="search">
-            <div class="default text">Выберите версию</div>
-        </div>
-        <div class="choice menu">
-            <a id="downloadsvg" class="item"><i class="download icon"></i>Загрузить граф</a>
-        </div>
-        <div class="right menu">
-            <a id="new_person" class="right item"><i class="big green plus icon"></i><i class="user icon"></i></a>
-            <a id="new_family" class="right item"><i class="big green plus icon"></i><i class="sitemap icon"></i></a>
-        </div>
     </nav>
     <div class="ui active dimmer">
         <div class="ui text loader">Загружаемся...</div>
     </div>
-    <main class="ui fluid container" id="output">
+    <main class="ui container" id="output">
+     <div class="ui raised segment">
+      <div class="ui two column very very relaxed grid container">
+       <div class="center aligned column">
+        <div id="vs-left" class="version-selector ui search selectable icon item dropdown">
+         <input type="hidden">
+         <input type="text" class="search">
+         <div class="default text">Выберите версию</div>
+         <i class="dropdown icon"></i>
+        </div>
+       </div>
+       <div class="ui vertical divider">
+        СРАНИВАЕМ С
+       </div>
+       <div class="center aligned column">
+        <div id="vs-right" class="version-selector ui search selectable icon item dropdown">
+         <input type="hidden">
+         <input type="text" class="search">
+         <div class="default text">Выберите версию</div>
+         <i class="dropdown icon"></i>
+        </div>
+       </div>
+      </div>
+     </div>
+     <div id="diff-output" class="ui container">
+     </div>
     </main>
-    <script src="http://danml.com/js/download.js"></script>
+    <script src="static/deep-diff.js"></script>
     <script src="static/jquery-2.2.0.min.js"></script>
     <script src="static/semantic.js"></script>
     <script src="static/viz.js"></script>
     <script src="static/lokijs.min.js"></script>
     <script src="static/svg-pan-zoom.js"></script>
     <script src="static/moment.min.js"></script>
-    <script src="static/edit_person.js"></script>
-    <script src="static/edit_family.js"></script>
     <script src="static/message.js"></script>
     <script src="static/ajaxdb.js"></script>
     <script>
@@ -86,28 +91,19 @@ moment.locale("ru")
 function Page () {
     var that = this;
     var dbname = "db-latest";
-    var db = {};
-    var persons = {};
-    var families = {};
+    var leftdb = {};
+    var rightdb = {};
     var dirty = false;
-    that.make_dirty = function(){
-        $("#save i").removeClass().addClass("big red save icon");
-        dirty = true;
-    }
-    that.make_loading_clean = function(){
-        $("#save i").removeClass().addClass("big loading spinner icon");
-    }
-    that.make_clean = function(){
-        $("#save i").removeClass().addClass("big green check circle icon");
-        dirty = false;
-    }
-    that.make_graph = function(){
+    that.make_graph = function(db, ps, fs){
+        persons = db.getCollection("persons");
+        families = db.getCollection("families");
         return  'digraph G{\n'+
                 ' graph[splines=polyline]\n'+
                 ' node[shape="record"]\n'+
                 //' style=invis;\n'+
-                  persons.mapReduce(
+                  persons.find({"$loki":{"$in": ps}}).map(
                     function (pers){
+                        console.log(pers)
                         return '"p' + pers.$loki +'"[label=" '+
                             pers.families.map(function(v,i){if(i!=0 ){return "("+v+")";};return v;}).join("")+"\\n"+
                             pers.names.map(function(v,i){if(i!=0 ){return "("+v+")";};return v;}).join("")+"\\n"+
@@ -116,39 +112,18 @@ function Page () {
                             'fillcolor='+((pers.gender=="мужской")?'lightblue':'lightpink')+', '+
                             'color='+((pers.gender=="мужской")?'darkblue':'deeppink')+
                             '];\n';
-                    },
-                    function (arr){return arr.join("");}
+                    }).reduce(
+                    function (pv, arr){if(!arr){return "";};return pv + arr;}, ""
                   )+
-                  families.mapReduce(
+                  families.find({"$loki":{"$in": fs}}).map(
                     function (f){
                         return  'subgraph cluster_f'+f.$loki+' { '+f.partners.map(function(p){return '"p' + p +'"';}).join()+'}->"f'+f.$loki+'"\n'+
                                 '"f'+f.$loki+'"[shape="point", id="f'+f.$loki+'", width="0.2em"]\n'+
                                 '"f'+f.$loki+'"->{'+f.children.map(function(p){return '"p' + p +'"';})+'}\n'
-                    },
-                    function (arr){return arr.join("");}
+                    }).reduce(
+                    function (pv, arr){if(!arr){return "";};return pv + arr;}, ""
                   )+
                 '}';
-    }
-    that.current_graph = function(){return Viz(that.make_graph());}
-    function accept_edited_person(pers){
-        if (pers.$loki){
-            persons.update(pers);
-        }else{
-            delete pers.$loki;
-            persons.insert(pers);
-        }
-        that.make_dirty();
-        that.create();
-    }
-    function accept_edited_family(family){
-        if (family.$loki){
-            families.update(family);
-        }else{
-            delete family.$loki;
-            families.insert(family);
-        }
-        that.make_dirty();
-        that.create();
     }
     that.request_names= function(settings, cb){
         with_fio = persons.chain().find()
@@ -165,74 +140,72 @@ function Page () {
         cb({results:res.data().map(function(o){return {name:o.fio, value: o.$loki};})});
     }
     that.create = function (){
-        if(that.svgpz){
-            that.svgpz.destroy();
-            delete that.svgpz;
+        if(!leftdb && !rightdb) return;
+        divsta = function(i){
+          return '<div class="ui raised segment">\n'+
+                 '  <div class="ui two column very very relaxed grid container">\n'+
+                 '   <div class="center aligned column">\n';
         }
-        $("#output").empty();
-        loader = $(
-            '<div class="ui active dimmer">'+
-            ' <div class="ui text loader">Строим граф родословной...</div>'+
-            '</div>'
-        );
-        $("#output").append(loader);
-        graph = that.make_graph();
-        s = Viz(graph).replace(
-            "<svg",
-            '<svg id="output-svg" preserveAspectRatio="xMinYMin meet" class="ui image fluid" '
-            );
-        $("#output").append(s);
-        that.svgpz = svgPanZoom("#output-svg");
-        $("#output-svg")
-            .attr("width","100%")
-            .attr("height", "100%")
-            .contextmenu(function(){return false;});
-        $('#output').find(".node").click(function(ev){
-            var idd = $(ev.currentTarget).attr("id");
-            if(idd[0]=="p"){
-                edit_person(accept_edited_person,
-                            persons.get(parseInt(idd.slice(1)))
-                           );
-                return true;
-            }else if(idd[0]=="f"){
-                edit_family(accept_edited_family,
-                            that.request_names,
-                            function(){
-                                edit_person(accept_edited_person);
-                            },
-                            families.get(parseInt(idd.slice(1)))
-                           );
-                return true;
+        divmid = function(i){
+          return '   </div>\n'+
+                 '   <div class="ui vertical divider">\n'+
+                 '    <div id="diffl'+i+'" class="ui fitted green checkbox">\n'+
+                 '      <input name="newsletter" type="checkbox">\n'+
+                 '      <label></label>\n'+
+                 '    </div>\n'+
+                 '    <div id="diffr'+i+'" class="ui fitted green checkbox">\n'+
+                 '      <input name="newsletter" type="checkbox">\n'+
+                 '      <label></label>\n'+
+                 '    </div>\n'+
+                 '  </div>\n'+
+                 '  <div class="center aligned column">\n';
+        }
+        divend = function(i){
+          return '  </div>\n'+
+                 ' </div>\n'+
+                 '</div>\n';
+        }
+        lp = leftdb.getCollection("persons");
+        rp = rightdb.getCollection("persons");
+        maxl = Math.max(lp.data.length,rp.data.length);
+        emptyg =  that.make_graph(leftdb, [],[]);
+        alldiff = ""
+        that.diffobj = {persons:[], families:[]}
+        for (i=0;i<maxl; i++){
+            a = lp.get(i); b = rp.get(i); 
+            try{delete a.meta;delete a.fio;}catch(e){};
+            try{delete b.meta; delete b.fio; }catch(e){}; 
+            dd = DeepDiff.diff(a,b); 
+            if(dd!==undefined){
+                console.log(dd);
+                pi = "p"+i
+                ag = that.make_graph(leftdb, [i],[]);
+                ag = (ag != emptyg)? Viz(ag) : "";
+                bg = that.make_graph(rightdb, [i],[]);
+                bg = (bg != emptyg)? Viz(bg) : "";
+                alldiff = alldiff + divsta(pi) + ag + divmid(pi) + bg + divend(pi);
+                that.diffobj.persons.push({index:i, diff: dd})
             }
-            console.log(idd);
-        })
-        .hover(
-            function(){
-                $(this).find("polygon").addClass("redstroke");
-                $(this).find("ellipse").addClass("redall");
-            },
-            function(){
-                $(this).find("polygon").removeClass("redstroke");
-                $(this).find("ellipse").removeClass("redall");
-            }
-        )
-        $('#output').find("title").remove();
-        loader.removeClass("active").remove();
-    }
-    that.make_db = function(){
-        delete persons;
-        delete families;
-        delete db;
-        db = new loki(dbname, {adapter: new AjaxDBAdapter()});
-        that.db = db;
-        db.loadDatabase({}, function(){
-            persons = db.getCollection('persons');
-            families = db.getCollection('families');
-            that.make_clean();
-            that.create();
-            $(".ui.active.dimmer").removeClass("active").remove();
-        });
+        }
+        lf =  leftdb.getCollection("families");
+        rf = rightdb.getCollection("families");
         
+        alldiff = $(alldiff)
+        $("#diff-output").empty();
+        $("#diff-output").append(alldiff);
+    }
+    that.make_db = function(left){
+        db = new loki(dbname, {adapter: new AjaxDBAdapter()});
+        db.loadDatabase({}, function(){
+            that.create();
+        });
+        if(left){
+            leftdb = db;
+            console.log("Got left db");
+        }else{
+            rightdb = db;
+            console.log("Got right db");
+        }
     }
     that.save_db = function(cb){
         cb = cb || function(){};
@@ -249,12 +222,9 @@ function Page () {
             .siblings()
             .removeClass('active');
           });
-    $("#save").click(function(){
+    /*$("#save").click(function(){
         that.save_db();
-    })
-    $("#downloadsvg").click(function(){
-        download(that.current_graph(),"родословная.svg","image/svg+xml")
-    });
+    })*/
     $('.version-selector').dropdown({
         saveRemoteData: false,
         apiSettings: {
@@ -274,68 +244,13 @@ function Page () {
     }).dropdown("set text", "Последняя версия").dropdown("set value","db-latest")
     .dropdown("setting","onChange", 
         function(value, text, $selectedItem) {
-            if(dirty){
-                message(
-                    '<i class="warning sign icon"></i>Несохранённые изменения',
-                    '<div class="content">Вы внесли изменения, но сохранили их. Сохранить изменения?</div>',
-                    function(){
-                        that.save_db(function(){
-                            dbname = value;
-                            that.make_db();
-                        });
-                    },
-                    function(){
-                        dbname = value;
-                        that.make_db();
-                    }
-                );
-            }else{
-                dbname = value;
-                that.make_db();
-            }
+            dbname = value;
+            that.make_db(this.id==="vs-left");
         });
-    that.make_db();
-    //db.loadDatabase({},that.create);
-    $("#ch_person").on('click', function(){
-        
-    });
-    $("#new_person").on('click', function(){
-        edit_person(accept_edited_person);
-    });
-    $("#new_family").on("click",function(){
-        edit_family(accept_edited_family,that.request_names,function(){edit_person(accept_edited_person);});
-    });
-    that.populate = function (cb){
-        persons.insert({ 
-            families:['Прокофьев'], 
-            names:   ['Иван'], snames:  ['Прокофьевич'], 
-            gender:  'мужской', birth:'1861', death:'1949'});
-        persons.insert({ 
-            families:['Прокофьева'], 
-            names:   ['Акелина'], snames:  ['Ивановна'], 
-            gender:'женский', birth:'??', death:'??'});
-        persons.insert({ 
-            families:['Прокофьева'], 
-            names:['Екатерина'], 
-            snames:['Ивановна'], gender:'женский', birth:'??', death:'??'});
-        persons.insert({ 
-            families:['Смирнов'], 
-            names:['Степан'], snames:['??'], 
-            gender:'мужской', birth:'??', death:'??'});
-        persons.insert({ 
-            families:['Смирнова', 'Иванова'], 
-            names:['Мария'], snames:['Ивановна'], 
-            gender:'женский', birth:'04.04.1892', death:'30.09.1970'});
-        families.insert({partners:[1, 2 ], children:[5]});
-        families.insert({partners:[3, 2 ], children:[]});
-        families.insert({partners:[4, 5 ], children:[]});
-        db.saveDatabase(function(){db.loadDatabase({},cb);});
-    }
-    /*that.populate(function(){
-        
-        that.create();
-    });*/
+    that.make_db(true);
+    that.make_db(false)
     window.Page_object = that;
+    $(".ui.active.dimmer").removeClass("active").remove();
 }
 $(document).ready(Page);
     </script>
