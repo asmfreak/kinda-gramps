@@ -171,7 +171,7 @@ function Page () {
         emptyg =  that.make_graph(leftdb, [],[]);
         alldiff = ""
         that.diffobj = {persons:[], families:[]}
-        for (i=0;i<maxl; i++){
+        for (i=0;i<maxl; i++){ //> stupid nano parser
             a = lp.get(i); b = rp.get(i); 
             try{delete a.meta;delete a.fio;}catch(e){};
             try{delete b.meta; delete b.fio; }catch(e){}; 
@@ -189,8 +189,31 @@ function Page () {
         }
         lf =  leftdb.getCollection("families");
         rf = rightdb.getCollection("families");
-        
-        alldiff = $(alldiff)
+        for (i=0;i<maxl; i++){ // >
+            a = lf.get(i); b = rf.get(i);
+            ap = []; bp = [];
+            try{
+                delete a.meta; 
+                ap.push.apply(ap, a.partners);
+                ap.push.apply(ap, a.children);
+            }catch(e){};
+            try{
+                delete b.meta;
+                bp.push.apply(bp, b.partners);
+                bp.push.apply(bp, b.children);
+            }catch(e){};
+            fi = "f" + i;
+            dd = DeepDiff.diff(a,b);
+            if(dd!==undefined){
+                ag = that.make_graph(leftdb, [i],[]);
+                ag = (ag != emptyg)? Viz(ag) : ""; }
+                bg = that.make_graph(rightdb, [i],[]);
+                bg = (bg != emptyg)? Viz(bg) : ""; 
+                alldiff = alldiff + divsta(pi) + ag + divmid(pi) + bg + divend(pi);
+                that.diffobj.persons.push({index:i, diff: dd});
+            }
+        }        
+        alldiff = $(alldiff);
         $("#diff-output").empty();
         $("#diff-output").append(alldiff);
     }
