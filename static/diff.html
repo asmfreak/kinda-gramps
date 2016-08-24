@@ -2,6 +2,9 @@
 <head>
     <title>Родословная</title>
     <meta charset="utf-8">    
+    <style>
+@orCircleSize : 20em;
+    </style>
     <link rel="stylesheet" type="text/css" href="/static/semantic.min.css">
     <style>
 html{
@@ -12,7 +15,6 @@ body {
 }
 #output svg {
     width: 100%;
-    height: 100%;
 }
 .toprightattached
 {
@@ -41,6 +43,7 @@ polygon, ellipse{
     -o-transition: all 0.3s ease;
     transition: all 0.3s ease;
 }
+@orCircleSize : 10em;
     </style>
 </head>
 <body>
@@ -103,7 +106,7 @@ function Page () {
                 //' style=invis;\n'+
                   persons.find({"$loki":{"$in": ps}}).map(
                     function (pers){
-                        console.log(pers)
+                        //console.log(pers)
                         return '"p' + pers.$loki +'"[label=" '+
                             pers.families.map(function(v,i){if(i!=0 ){return "("+v+")";};return v;}).join("")+"\\n"+
                             pers.names.map(function(v,i){if(i!=0 ){return "("+v+")";};return v;}).join("")+"\\n"+
@@ -142,26 +145,42 @@ function Page () {
     that.create = function (){
         if(!leftdb && !rightdb) return;
         divsta = function(i){
-          return '<div class="ui raised segment">\n'+
-                 '  <div class="ui two column very very relaxed grid container">\n'+
-                 '   <div class="center aligned column">\n';
+          return '<div class="ui top attached segment">\n'+
+                 ' <div class="ui two column very very relaxed grid container">\n'+
+                 '  <div class="center aligned column">\n';
         }
         divmid = function(i){
-          return '   </div>\n'+
-                 '   <div class="ui vertical divider">\n'+
-                 '    <div id="diffl'+i+'" class="ui fitted green checkbox">\n'+
-                 '      <input name="newsletter" type="checkbox">\n'+
-                 '      <label></label>\n'+
-                 '    </div>\n'+
-                 '    <div id="diffr'+i+'" class="ui fitted green checkbox">\n'+
-                 '      <input name="newsletter" type="checkbox">\n'+
-                 '      <label></label>\n'+
-                 '    </div>\n'+
-                 '  </div>\n'+
+          return '  </div>\n'+
+                 '  <div class="ui vertical divider">ИЛИ</div>\n'+
                  '  <div class="center aligned column">\n';
         }
         divend = function(i){
           return '  </div>\n'+
+                 ' </div>\n'+
+                 '</div>\n'+
+                 '<div class="ui bottom attached center aligned grid segment">'+
+                 ' <div class="ui fluid form">'+
+                 ' <div id="diff'+i+'" class="inline fields">\n'+
+                 '  <label>Какую версию оставить?</label>'+
+                 '  <div class="field">\n'+
+                 '   <div id="diff'+i+'l" class="ui checked radio checkbox">\n'+
+                 '    <input name="diff'+i+'" type="radio">\n'+
+                 '    <label>Левую</label>\n'+
+                 '   </div>\n'+
+                 '  </div>\n'+
+                 '  <div class="field">\n'+
+                 '   <div id="diff'+i+'r" class="ui radio checkbox">\n'+
+                 '    <input name="diff'+i+'" type="radio">\n'+
+                 '    <label>Правую</label>\n'+
+                 '   </div>\n'+
+                 '  </div>\n'+
+                 '  <div class="field">\n'+
+                 '   <div id="diff'+i+'l" class="ui radio checkbox">\n'+
+                 '    <input name="diff'+i+'" type="radio">\n'+
+                 '    <label>Обе</label>\n'+
+                 '   </div>\n'+
+                 '  </div>\n'+
+                 ' </div>\n'+
                  ' </div>\n'+
                  '</div>\n';
         }
@@ -169,15 +188,16 @@ function Page () {
         rp = rightdb.getCollection("persons");
         maxl = Math.max(lp.data.length,rp.data.length);
         emptyg =  that.make_graph(leftdb, [],[]);
-        alldiff = ""
-        that.diffobj = {persons:[], families:[]}
+        alldiff = "";
+        alldiff = alldiff + '<div class="ui raised segment"><h5>Персоналии</h5></div>\n';
+        that.diffobj = {persons:[], families:[]};
         for (i=0;i<maxl; i++){ //> stupid nano parser
             a = lp.get(i); b = rp.get(i); 
             try{delete a.meta;delete a.fio;}catch(e){};
             try{delete b.meta; delete b.fio; }catch(e){}; 
             dd = DeepDiff.diff(a,b); 
             if(dd!==undefined){
-                console.log(dd);
+                //console.log(dd);
                 pi = "p"+i
                 ag = that.make_graph(leftdb, [i],[]);
                 ag = (ag != emptyg)? Viz(ag) : "";
@@ -187,8 +207,10 @@ function Page () {
                 that.diffobj.persons.push({index:i, diff: dd})
             }
         }
+        alldiff = alldiff + '<div class="ui raised segment"><h5>Семьи</h5></div>\n';
         lf =  leftdb.getCollection("families");
         rf = rightdb.getCollection("families");
+        maxl = Math.max(lf.data.length,rf.data.length);
         for (i=0;i<maxl; i++){ // >
             a = lf.get(i); b = rf.get(i);
             ap = []; bp = [];
@@ -205,17 +227,72 @@ function Page () {
             fi = "f" + i;
             dd = DeepDiff.diff(a,b);
             if(dd!==undefined){
-                ag = that.make_graph(leftdb, [i],[]);
-                ag = (ag != emptyg)? Viz(ag) : ""; }
-                bg = that.make_graph(rightdb, [i],[]);
+                ag = that.make_graph(leftdb, ap, [i]);
+                ag = (ag != emptyg)? Viz(ag) : ""; 
+                bg = that.make_graph(rightdb, bp, [i]);
                 bg = (bg != emptyg)? Viz(bg) : ""; 
                 alldiff = alldiff + divsta(pi) + ag + divmid(pi) + bg + divend(pi);
                 that.diffobj.persons.push({index:i, diff: dd});
             }
-        }        
+        }
+        alldiff = alldiff + 
+                 '<div class="ui fluid buttons">\n'+
+                 ' <button class="ui positive button">Сохранить</button>'+
+                 ' <div class="or" data-text="или"></div>'+
+                 ' <button class="ui negative button">Отмена</button>'+
+                 '</div>\n';
         alldiff = $(alldiff);
+        alldiff.find(".ui.radio.checkbox").checkbox();
+        alldiff.find(".ui.checked.radio.checkbox").checkbox("set checked");
         $("#diff-output").empty();
         $("#diff-output").append(alldiff);
+        alldiff.find('.ui.positive.button').click(function(){
+            adiff = that.diffobj
+            db = $.extend(true, {}, leftdb);
+            pers = db.getCollection("persons");
+            newpers = {}
+            for(i=0; i<adiff.persons.length; i++ ){ //>
+                pdiff = adiff.persons[i];
+                pi = "p" + pdiff.index;
+                keepleft = alldiff.find('#diff'+pi+'l').checkbox('is checked');
+                keepright = alldiff.find('#diff'+pi+'r').checkbox('is checked');
+                if(keepleft){
+                    console.log("nothing to do");
+                }else if(keepright){
+                    pers.update(rp.get(pdiff.index));
+                }else{
+                    b = rp.get(pdiff.index);
+                    delete b.$loki;
+                    b = pers.insert(b);
+                    newpers[pdiff.index] = b.$loki;
+                }
+            }
+            fams = getCollection("families");
+            for(i=0; i<adiff.families.length; i++ ){ //>
+                fdiff = adiff.persons[i];
+                fi = "f" + pdiff.index;
+                keepleft = alldiff.find('#diff'+fi+'l').checkbox('is checked');
+                keepright = alldiff.find('#diff'+fi+'r').checkbox('is checked');
+                if(keepleft){
+                    console.log("nothing to do");
+                }else if(keepright){
+                    b=rp.get(pdiff.index)
+                    for(j=0;j<b.partners.length;j++){ //>
+                        if(b.partners[j] in newpers){
+                            b.partners[j] = newpers[b.partners[j]];
+                        }
+                    }
+                    for(j=0;j<b.children.length;j++){ //>
+                        if(b.children[j] in newpers){
+                            b.children[j] = newpers[b.children[j]];
+                        }
+                    }
+                    fams.update(b);
+                }else{
+                    
+                }
+            }
+        })
     }
     that.make_db = function(left){
         db = new loki(dbname, {adapter: new AjaxDBAdapter()});
@@ -228,15 +305,6 @@ function Page () {
         }else{
             rightdb = db;
             console.log("Got right db");
-        }
-    }
-    that.save_db = function(cb){
-        cb = cb || function(){};
-        if (dirty){
-            db.saveDatabase(function(){
-                that.make_clean();
-                cb();
-            });
         }
     }
     $('.choice.menu a.item').on('click', function() {
